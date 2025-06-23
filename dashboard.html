@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Swiss Weather</title>
+    <style>
+        /* Global */
+        * { box-sizing: border-box; }
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            background: linear-gradient(to bottom right, #f0f4f8, #d9e2ec);
+            font-family: 'SF Pro Display', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
+            color: #333;
+        }
+
+        .dashboard-wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Glass Navbar */
+        .navbar {
+            position: sticky;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-radius: 0 0 16px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            z-index: 1000;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+        }
+
+        .flag {
+            width: 32px;
+            margin-right: 0.85rem;
+        }
+
+        .name {
+            font-size: 1.35rem;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .tabs {
+            display: flex;
+        }
+
+        .tab {
+            margin-left: 0.85rem;
+            text-decoration: none;
+            font-size: 0.95rem;
+            color: #555;
+            position: relative;
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.4);
+            color: #1a1a1a;
+        }
+
+        /* Für die aktive Navigationsleiste wird hier eine statische Klasse verwendet.
+           In Vue wurde dies dynamisch über `router-link-exact-active` gehandhabt.
+           Du müsstest dies manuell einstellen oder mit JavaScript steuern. */
+        .tab.active {
+            background: rgba(255, 255, 255, 0.5);
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 3px;
+            background: #007aff;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+
+        /* Widgets Grid */
+        main {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1rem;
+            padding: 1rem;
+            justify-content: center;
+        }
+
+        .widget {
+            background: rgba(255, 255, 255, 0.25); /* Glasiger Effekt: Weiße Farbe mit 25% Deckkraft */
+            backdrop-filter: blur(20px); /* Stärkere Unschärfe */
+            -webkit-backdrop-filter: blur(20px);
+            border-radius: 16px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-around;
+            border: 1px solid rgba(255, 255, 255, 0.3); /* Leichter, transparenter Rand */
+        }
+
+        .widget:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+        }
+
+        .widget h2 {
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+            color: #444;
+            text-align: center;
+        }
+
+        /* Aktuelles Wetter Widget */
+        .current-weather-widget {
+            /* Für einen glasigen Effekt bei Farbverläufen kannst du die Transparenz in den Farben selbst anpassen */
+            background: linear-gradient(135deg, rgba(106, 183, 255, 0.6), rgba(0, 122, 255, 0.6));
+            color: white;
+            grid-column: span 2;
+            backdrop-filter: blur(20px); /* Auch hier Unschärfe anwenden */
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+
+        .current-weather-widget .temp {
+            font-size: 4rem;
+            font-weight: bold;
+            margin-bottom: 0.3rem;
+        }
+
+        .current-weather-widget .desc {
+            font-size: 1.2rem;
+            color: rgba(255, 255, 255, 0.9);
+        }
+
+        .current-weather-widget .location {
+            font-size: 1rem;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        /* Wochenübersicht Widget */
+        .weekly-forecast-widget {
+            grid-column: span 2;
+            background: rgba(255, 255, 255, 0.25); /* Auch hier glasig machen */
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+        }
+
+        .week-forecast {
+            width: 100%; /* Sicherstellen, dass der Container die volle Breite einnimmt */
+        }
+
+        .day-forecast {
+            width: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.3rem 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
+        }
+
+        .day-forecast:last-child {
+            border-bottom: none;
+        }
+
+        .day-forecast .icon {
+            width: 50px; /* Größe der Icons anpassen */
+            height: auto;
+        }
+
+        .day-forecast .temp-range {
+            font-weight: bold;
+            min-width: 80px; /* Für bessere Ausrichtung */
+            text-align: right;
+        }
+
+        /* Sonne-, Wind-, Luftfeuchtigkeits-Widgets */
+        .sun-times-widget,
+        .wind-widget,
+        .Luftfeuchtigkeits-widget {
+            min-height: 180px;
+            padding: 1.5rem;
+            text-align: center;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(240, 244, 255, 0.25));
+            border-radius: 20px;
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center; /* Jetzt in der Mitte */
+            gap: 1rem;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+        }
+        .sun-times-widget:hover,
+        .wind-widget:hover,
+        .Luftfeuchtigkeits-widget:hover {
+            transform: translateY(-6px);
+            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
+        }
+
+        .sun-times-widget h2,
+        .wind-widget h2,
+        .Luftfeuchtigkeits-widget h2 {
+            font-size: 1.2rem;
+            color: #007aff;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .sun-time,
+        .detail-item {
+            font-size: 1rem;
+            color: #333;
+            background: rgba(255, 255, 255, 0.3); /* Mehr Transparenz */
+            padding: 0.6rem 1rem;
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            width: 100%;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03); /* Leichterer Schatten */
+            border: 1px solid rgba(255, 255, 255, 0.4); /* Transparenter Rand */
+        }
+
+        /* Responsivität für kleinere Bildschirme */
+        @media (max-width: 768px) {
+            main {
+                grid-template-columns: 1fr; /* Eine Spalte auf kleinen Bildschirmen */
+            }
+            .current-weather-widget,
+            .weekly-forecast-widget {
+                grid-column: span 1; /* Nehmen Sie nur eine Spalte ein */
+            }
+        }
+        @media (max-width: 480px) {
+            .navbar {
+                padding: 0.4rem 0.6rem;
+            }
+            .flag {
+                width: 24px;
+            }
+            .name {
+                font-size: 1.1rem;
+            }
+            .tabs {
+                flex-direction: column; /* Tabs untereinander auf sehr kleinen Bildschirmen */
+                align-items: flex-end; /* Rechts ausrichten */
+            }
+            .tab {
+                font-size: 0.85rem;
+                padding: 0.2rem 0.5rem;
+                margin-left: 0; /* Kein linker Margin, wenn untereinander */
+                margin-top: 0.2rem; /* Kleiner Abstand zwischen den Tabs */
+            }
+            .widget-title { /* Diese Klasse war nicht im ursprünglichen Code, falls sie verwendet wird */
+                font-size: 1.4rem;
+            }
+        }
+        .error-wrapper {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 9999;
+        }
+
+        .error {
+            max-width: 600px;
+            padding: 1.5rem 2rem;
+            color: #a94442;
+            background: rgba(255, 0, 0, 0.15);
+            border: 1px solid rgba(255, 0, 0, 0.3);
+            border-radius: 12px;
+            font-size: 1.1rem;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-wrapper">
+        <nav class="navbar glass">
+            <div class="nav-left">
+                <img src="assets/swissflag.png" alt="Swiss Flag" class="flag">
+                <span class="name">Swiss Weather</span>
+            </div>
+            <div class="tabs">
+                <a href="/dashboard.html" class="tab active">
+                    Dashboard
+                </a>
+                <a href="/map.html" class="tab">
+                    Map
+                </a>
+                <a href="/search.html" class="tab">
+                    Search
+                </a>
+            </div>
+        </nav>
+
+        <main>
+            <div class="widget current-weather-widget glass">
+                <h2>Aktuelles Wetter</h2>
+                <div class="temp">20°C</div>
+                <div class="desc">Leichter Regen</div>
+                <div class="location">Zürich, CH</div>
+            </div>
+
+            <div class="widget weekly-forecast-widget glass">
+                <h2>Wochenübersicht</h2>
+                <div class="week-forecast">
+                    <div class="day-forecast">
+                        <span class="day">Mo</span>
+                        <img src="https://openweathermap.org/img/wn/10d@2x.png" alt="Icon" class="icon">
+                        <span class="temp-range">
+                            22°C / 15°C
+                        </span>
+                    </div>
+                    <div class="day-forecast">
+                        <span class="day">Di</span>
+                        <img src="https://openweathermap.org/img/wn/01d@2x.png" alt="Icon" class="icon">
+                        <span class="temp-range">
+                            25°C / 17°C
+                        </span>
+                    </div>
+                    <div class="day-forecast">
+                        <span class="day">Mi</span>
+                        <img src="https://openweathermap.org/img/wn/04d@2x.png" alt="Icon" class="icon">
+                        <span class="temp-range">
+                            20°C / 14°C
+                        </span>
+                    </div>
+                    <div class="day-forecast">
+                        <span class="day">Do</span>
+                        <img src="https://openweathermap.org/img/wn/09d@2x.png" alt="Icon" class="icon">
+                        <span class="temp-range">
+                            18°C / 12°C
+                        </span>
+                    </div>
+                    <div class="day-forecast">
+                        <span class="day">Fr</span>
+                        <img src="https://openweathermap.org/img/wn/03d@2x.png" alt="Icon" class="icon">
+                        <span class="temp-range">
+                            23°C / 16°C
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="widget sun-times-widget glass">
+                <h2>Sonne</h2>
+                <div class="sun-time">05:30</div>
+                <div class="sun-time">21:15</div>
+            </div>
+
+            <div class="widget wind-widget glass">
+                <h2>Wind</h2>
+                <div class="detail-item">
+                    <span>Wind:</span>
+                    <span>
+                        15 km/h NW
+                    </span>
+                </div>
+            </div>
+
+            <div class="widget Luftfeuchtigkeits-widget glass">
+                <h2>Luftfeuchtigkeit</h2>
+                <div class="detail-item">
+                    <span>Luftfeuchtigkeit:</span>
+                    <span>75 %</span>
+                </div>
+            </div>
+
+            </main>
+    </div>
+</body>
+</html>
