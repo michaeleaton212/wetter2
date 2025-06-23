@@ -1,0 +1,548 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wetter Suche - Swiss Weather</title>
+    <style>
+        /* Global */
+        * {
+            box-sizing: border-box;
+        }
+        html, body {
+            margin: 0;
+            padding: 0;
+            overflow-x: hidden;
+            background: linear-gradient(to bottom right, #f0f4f8, #d9e2ec);
+            font-family: 'SF Pro Display', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
+            color: #333;
+        }
+
+        .dashboard-wrapper {
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center; /* Zentriert den Inhalt */
+        }
+
+        /* Glass (allgemein) */
+        .glass {
+            background: rgba(255, 255, 255, 0.25); /* More transparent for a stronger glass effect */
+            backdrop-filter: blur(20px); /* Increased blur for more pronounced glass */
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.4); /* Softer, more transparent border */
+            border-radius: 0 0 16px 16px; /* This border-radius will be overridden for input-group.glass */
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); /* Slightly more prominent shadow for depth */
+        }
+
+        /* Input-Group mit abgerundeten Ecken rundum */
+        .input-group.glass {
+            border-radius: 16px;
+            margin-bottom: 1rem;
+            overflow: hidden;
+            width: 366px;
+        }
+
+        /* Input füllt den runden Container */
+        .input {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            border: none;
+            border-radius: 0;
+            font-size: 1rem;
+            outline: none;
+            background: rgba(255, 255, 255, 0.4); /* Transparent input background */
+            color: #333; /* Ensure text remains readable */
+        }
+
+        /* Navbar exakt wie im Dashboard */
+        .navbar {
+            position: sticky;
+            top: 0;
+            width: 100%;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.75rem 1rem;
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            border-radius: 0 0 16px 16px;
+            border: 1px solid rgba(255, 255, 255, 0.4);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+            z-index: 1000;
+        }
+
+        .nav-left {
+            display: flex;
+            align-items: center;
+        }
+
+        .flag {
+            width: 32px;
+            margin-right: 0.85rem;
+        }
+
+        .name {
+            font-size: 1.35rem;
+            font-weight: 600;
+            color: #1a1a1a;
+        }
+
+        .tabs {
+            display: flex;
+        }
+
+        .tab {
+            margin-left: 0.85rem;
+            text-decoration: none;
+            font-size: 0.95rem;
+            color: #555;
+            position: relative;
+            padding: 0.5rem 1rem;
+            border-radius: 10px;
+            transition: background 0.3s ease, color 0.3s ease;
+        }
+
+        .tab:hover {
+            background: rgba(255, 255, 255, 0.4);
+            color: #1a1a1a;
+        }
+
+        /* Die "active" Klasse muss manuell gesetzt werden, da kein Vue Router */
+        .tab.active {
+            background: rgba(255, 255, 255, 0.5);
+            color: #1a1a1a;
+            font-weight: 600;
+        }
+
+        .tab.active::after {
+            content: '';
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 60%;
+            height: 3px;
+            background: #007aff;
+            border-radius: 2px;
+            transition: width 0.3s ease;
+        }
+        /* Weather Search Section */
+        .weather-search {
+            width: 100%;
+            max-width: 400px;
+            margin: 2rem auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            overflow: hidden;
+        }
+        .title {
+            font-size: 2rem;
+            color: #333;
+            margin-bottom: 1rem;
+        }
+        .btn {
+            width: 100%;
+            padding: 0.75rem;
+            font-size: 1rem;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            border-radius: 8px;
+            background: rgba(0, 122, 255, 0.7); /* Transparent blue button */
+            color: white;
+            transition: background 0.3s ease;
+            margin-bottom: 1rem; /* Added margin for spacing */
+        }
+        .btn:hover {
+            background: rgba(0, 122, 255, 0.8); /* Slightly less transparent on hover */
+        }
+        .result {
+            width: 100%;
+            text-align: center;
+            padding: 1rem; /* Added padding for spacing inside the result box */
+        }
+        .weather-info {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .icon {
+            width: 80px;
+            height: 80px;
+            margin: 1rem 0;
+        }
+        .desc {
+            font-size: 1.1rem;
+            margin-bottom: 0.5rem;
+        }
+        .error {
+            max-width: 500px;
+            margin: 1rem auto;
+            padding: 1rem 1.5rem;
+            color: #a94442;
+            background: rgba(255, 0, 0, 0.15);
+            border: 1px solid rgba(255, 0, 0, 0.3);
+            border-radius: 12px;
+            font-size: 1rem;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            -webkit-backdrop-filter: blur(10px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+        }
+
+
+        /* Horizontale Forecast-Box */
+        .forecast-box {
+            width: 100%;
+            max-width: 500px;
+            margin: 1rem auto 0;
+            text-align: center;
+            padding: 1rem; /* Added padding for spacing inside the forecast box */
+        }
+        .forecast-box .week-forecast {
+            display: flex;
+            flex-direction: row;
+            flex-wrap: nowrap;
+            justify-content: space-between;
+            gap: 0.1rem;
+            margin-top: 1rem;
+            overflow-x: auto;
+        }
+        .forecast-box .day-forecast {
+            flex: 0 0 auto;
+            width: 80px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 0.5rem;
+            background: rgba(255, 255, 255, 0.3); /* Transparent background for each day */
+            backdrop-filter: blur(10px); /* Add blur for consistent glass effect */
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.4); /* Light transparent border */
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); /* Softer shadow */
+        }
+        .forecast-box .icon-small {
+            width: 40px;
+            height: 40px;
+            margin: 0.5rem 0;
+        }
+        .forecast-box .day {
+            font-weight: 600;
+        }
+        .forecast-box .temp-range {
+            font-size: 0.9rem;
+            line-height: 1.2;
+        }
+        /*  Hover Search */
+
+        .forecast-box:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            transition: transform 0.4s ease, box-shadow 0.4s ease;
+
+        }
+        .weather-search:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            transition: transform 0.4s ease, box-shadow 0.4s ease;
+
+        }
+        .day-forecast:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+            transition: transform 0.4s ease, box-shadow 0.6s ease;
+
+        }
+
+
+        /* Responsive Anpassungen */
+        @media (max-width: 768px) {
+            main { /* Targets the main content area */
+                flex-direction: column;
+                padding: 0 0.5rem;
+            }
+            .weather-search, .forecast-box {
+                max-width: 95%; /* Adjust max-width for smaller screens */
+            }
+            .input-group.glass {
+                width: 100%; /* Make input group full width */
+            }
+        }
+        @media (max-width: 480px) {
+            .navbar {
+                padding: 0.4rem 0.6rem;
+            }
+            .flag {
+                width: 24px;
+            }
+            .name {
+                font-size: 1.1rem;
+            }
+            .tabs {
+                flex-direction: column; /* Tabs untereinander auf sehr kleinen Bildschirmen */
+                align-items: flex-end; /* Rechts ausrichten */
+            }
+            .tab {
+                font-size: 0.85rem;
+                padding: 0.2rem 0.5rem;
+                margin-left: 0; /* Kein linker Margin, wenn untereinander */
+                margin-top: 0.2rem; /* Kleiner Abstand zwischen den Tabs */
+            }
+            .title {
+                font-size: 1.4rem;
+            }
+        }
+        /* Applying the .glass styles to weather-search and forecast-box directly */
+        .weather-search,
+        .forecast-box {
+            border-radius: 16px;
+            overflow: hidden;
+            padding: 1rem;
+            margin-bottom: 1.5rem;
+            background: rgba(255, 255, 255, 0.25); /* Adjusted for specific elements */
+            backdrop-filter: blur(20px); /* Adjusted for specific elements */
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.4); /* Adjusted for specific elements */
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); /* Adjusted for specific elements */
+        }
+
+        .weather-search {
+            margin-top: 2rem;
+        }
+
+        .forecast-box {
+            margin-top: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard-wrapper">
+        <nav class="navbar glass">
+            <div class="nav-left">
+                <img src="assets/swissflag.png" alt="Swiss Flag" class="flag">
+                <span class="name">Swiss Weather</span>
+            </div>
+            <div class="tabs">
+                <a href="/dashboard.html" class="tab">Dashboard</a>
+                <a href="/map.html" class="tab">Map</a>
+                <a href="/search.html" class="tab active">Search</a>
+            </div>
+        </nav>
+
+        <main>
+            <section class="weather-search glass">
+                <h1 class="title">Stadt suchen</h1>
+
+                <div class="input-group glass">
+                    <input
+                        type="text"
+                        id="cityInput"
+                        placeholder="Stadt eingeben"
+                        class="input"
+                    />
+                </div>
+
+                <button class="btn glass-btn" id="searchButton">
+                    Wetter anzeigen
+                </button>
+
+                <div id="wetter" class="result glass">
+                    <div id="weatherInfo" class="weather-info" style="display: none;">
+                        <h2 id="cityNameCountry"></h2>
+                        <img id="weatherIcon" alt="Wetter Icon" class="icon">
+                        <p class="desc"><strong id="weatherDescription"></strong></p>
+                        <p>Temperatur: <span id="temperature"></span>°C</p>
+                        <p>Luftfeuchtigkeit: <span id="humidity"></span>%</p>
+                        <p>Wind: <span id="windSpeed"></span> m/s</p>
+                    </div>
+                    <div id="errorMessage" class="error" style="display: none;"></div>
+                </div>
+            </section>
+
+            <section class="forecast-box glass" id="forecastBox" style="display: none;">
+                <h2>5-Tage-Vorhersage</h2>
+                <div class="week-forecast" id="weekForecast">
+                    </div>
+            </section>
+        </main>
+    </div>
+
+    <script>
+        // API-Schlüssel für OpenWeatherMap
+        const apiKey = '8198635183eda125f7fe682e16be92d1'; // Dein OpenWeatherMap API-Schlüssel
+
+        // DOM-Elemente abrufen
+        const cityInput = document.getElementById('cityInput');
+        const searchButton = document.getElementById('searchButton');
+        const weatherInfoDiv = document.getElementById('weatherInfo');
+        const cityNameCountry = document.getElementById('cityNameCountry');
+        const weatherIcon = document.getElementById('weatherIcon');
+        const weatherDescription = document.getElementById('weatherDescription');
+        const temperature = document.getElementById('temperature');
+        const humidity = document.getElementById('humidity');
+        const windSpeed = document.getElementById('windSpeed');
+        const errorMessageDiv = document.getElementById('errorMessage');
+        const forecastBox = document.getElementById('forecastBox');
+        const weekForecastDiv = document.getElementById('weekForecast');
+
+        // Hilfsfunktion zum Erstellen der Icon-URL
+        const iconUrl = icon => `https://openweathermap.org/img/wn/${icon}@2x.png`;
+
+        // Hilfsfunktion zum Abrufen des Wochentags
+        const getWeekday = dt => new Date(dt * 1000)
+            .toLocaleDateString('de-CH', { weekday: 'short' });
+
+        // Funktion zum Abrufen und Anzeigen des Wetters
+        const wetterHolen = async () => {
+            // Fehlermeldung und bisherige Daten zurücksetzen
+            errorMessageDiv.style.display = 'none';
+            errorMessageDiv.textContent = '';
+            weatherInfoDiv.style.display = 'none';
+            forecastBox.style.display = 'none';
+            weekForecastDiv.innerHTML = ''; // Vorhersage leeren
+
+            const stadt = cityInput.value.trim();
+
+            if (!stadt) {
+                errorMessageDiv.textContent = 'Bitte eine Stadt eingeben';
+                errorMessageDiv.style.display = 'block';
+                return;
+            }
+
+            try {
+                // Aktuelles Wetter abrufen
+                const resNow = await fetch(
+                    `https://api.openweathermap.org/data/2.5/weather`
+                    + `?q=${encodeURIComponent(stadt)}`
+                    + `&units=metric&lang=de&appid=${apiKey}`
+                );
+                if (!resNow.ok) {
+                    const errorData = await resNow.json();
+                    throw new Error(errorData.message || 'Stadt nicht gefunden');
+                }
+                const dataNow = await resNow.json();
+
+                // Aktuelles Wetter anzeigen
+                cityNameCountry.textContent = `${dataNow.name}, ${dataNow.sys.country}`;
+                weatherIcon.src = iconUrl(dataNow.weather[0].icon);
+                weatherDescription.textContent = dataNow.weather[0].description;
+                temperature.textContent = Math.round(dataNow.main.temp);
+                humidity.textContent = dataNow.main.humidity;
+                windSpeed.textContent = dataNow.wind.speed;
+                weatherInfoDiv.style.display = 'flex'; // Wieder auf 'flex' setzen, da es ein Flex-Container ist
+
+                // Letztes Wetter im localStorage speichern
+                localStorage.setItem('lastWeather', JSON.stringify(dataNow));
+
+                // 5-Tage-Vorhersage abrufen
+                const resFc = await fetch(
+                    `https://api.openweathermap.org/data/2.5/forecast`
+                    + `?q=${encodeURIComponent(stadt)}`
+                    + `&units=metric&lang=de&appid=${apiKey}`
+                );
+                if (!resFc.ok) {
+                     const errorData = await resFc.json();
+                     throw new Error(errorData.message || 'Forecast nicht verfügbar');
+                }
+                const dataFc = await resFc.json();
+
+                // Daten für die tägliche Vorhersage aufbereiten
+                const mapDays = {};
+                dataFc.list.forEach(entry => {
+                    // OpenWeatherMap's forecast provides data every 3 hours.
+                    // We want one entry per day, taking min/max temps for that day.
+                    const date = new Date(entry.dt * 1000);
+                    const dateStr = date.toISOString().split('T')[0]; // Format YYYY-MM-DD
+
+                    if (!mapDays[dateStr]) {
+                        mapDays[dateStr] = {
+                            date: entry.dt,
+                            min: entry.main.temp_min,
+                            max: entry.main.temp_max,
+                            icon: entry.weather[0].icon
+                        };
+                    } else {
+                        mapDays[dateStr].min = Math.min(mapDays[dateStr].min, entry.main.temp_min);
+                        mapDays[dateStr].max = Math.max(mapDays[dateStr].max, entry.main.temp_max);
+                        // Update icon to represent midday or common condition for the day, or just keep the first one
+                        // For simplicity, we'll just keep the first icon for the day here.
+                    }
+                });
+
+                // Die ersten 5 Tage (ab dem nächsten Tag) auswählen
+                const dailyForecast = Object.values(mapDays).slice(0, 5); // slice(1,6) if you want to skip current day and get next 5
+
+                // Vorhersage anzeigen
+                dailyForecast.forEach(day => {
+                    const dayDiv = document.createElement('div');
+                    dayDiv.classList.add('day-forecast');
+                    dayDiv.innerHTML = `
+                        <span class="day">${getWeekday(day.date)}</span>
+                        <img src="${iconUrl(day.icon)}" alt="Icon" class="icon-small">
+                        <span class="temp-range">
+                            ${Math.round(day.max)}°C<br><small>/ ${Math.round(day.min)}°C</small>
+                        </span>
+                    `;
+                    weekForecastDiv.appendChild(dayDiv);
+                });
+                forecastBox.style.display = 'block';
+
+                // Letzte tägliche Vorhersage im localStorage speichern
+                localStorage.setItem('lastDaily', JSON.stringify(dailyForecast));
+
+            } catch (e) {
+                errorMessageDiv.textContent = e.message;
+                errorMessageDiv.style.display = 'block';
+            }
+        };
+
+        // Event Listener für den Button und Enter-Taste im Inputfeld
+        searchButton.addEventListener('click', wetterHolen);
+        cityInput.addEventListener('keyup', (event) => {
+            if (event.key === 'Enter') {
+                wetterHolen();
+            }
+        });
+
+        // Beim Laden der Seite die zuletzt gespeicherten Daten anzeigen
+        document.addEventListener('DOMContentLoaded', () => {
+            const savedWeather = localStorage.getItem('lastWeather');
+            if (savedWeather) {
+                const dataNow = JSON.parse(savedWeather);
+                cityNameCountry.textContent = `${dataNow.name}, ${dataNow.sys.country}`;
+                weatherIcon.src = iconUrl(dataNow.weather[0].icon);
+                weatherDescription.textContent = dataNow.weather[0].description;
+                temperature.textContent = Math.round(dataNow.main.temp);
+                humidity.textContent = dataNow.main.humidity;
+                windSpeed.textContent = dataNow.wind.speed;
+                weatherInfoDiv.style.display = 'flex';
+                cityInput.value = dataNow.name; // Stadt im Inputfeld vorbesetzen
+            }
+
+            const savedDaily = localStorage.getItem('lastDaily');
+            if (savedDaily) {
+                const dailyForecast = JSON.parse(savedDaily);
+                dailyForecast.forEach(day => {
+                    const dayDiv = document.createElement('div');
+                    dayDiv.classList.add('day-forecast');
+                    dayDiv.innerHTML = `
+                        <span class="day">${getWeekday(day.date)}</span>
+                        <img src="${iconUrl(day.icon)}" alt="Icon" class="icon-small">
+                        <span class="temp-range">
+                            ${Math.round(day.max)}°C<br><small>/ ${Math.round(day.min)}°C</small>
+                        </span>
+                    `;
+                    weekForecastDiv.appendChild(dayDiv);
+                });
+                if (dailyForecast.length > 0) {
+                    forecastBox.style.display = 'block';
+                }
+            }
+        });
+    </script>
+</body>
+</html>
