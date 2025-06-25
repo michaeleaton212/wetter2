@@ -1,548 +1,890 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Wetter Suche - Swiss Weather</title>
-    <style>
-        /* Global */
-        * {
-            box-sizing: border-box;
-        }
-        html, body {
-            margin: 0;
-            padding: 0;
-            overflow-x: hidden;
-            background: linear-gradient(to bottom right, #f0f4f8, #d9e2ec);
-            font-family: 'SF Pro Display', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
-            color: #333;
-        }
+<template>
+  <div class="dashboard-wrapper" :class="{ 'dark-mode': isDarkMode }">
+    <nav class="navbar glass">
+      <div class="nav-left">
+        <img src="@/assets/swissflag.png" alt="Swiss Flag" class="flag">
+        <span class="name">Swiss Weather</span>
+      </div>
+      <div class="tabs">
+        <router-link to="/dashboard" class="tab" active-class="router-link-exact-active">
+          Dashboard
+        </router-link>
+        <router-link to="/map" class="tab" active-class="router-link-exact-active">
+          Map
+        </router-link>
+        <router-link to="/search" class="tab" active-class="router-link-exact-active">
+          Search
+        </router-link>
 
-        .dashboard-wrapper {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            align-items: center; /* Zentriert den Inhalt */
-        }
+        <div class="dark-mode-switch">
+          <label class="switch">
+            <input type="checkbox" v-model="isDarkMode" />
+            <span class="slider round"></span>
+          </label>
+        </div>
+      </div>
+    </nav>
 
-        /* Glass (allgemein) */
-        .glass {
-            background: rgba(255, 255, 255, 0.25); /* More transparent for a stronger glass effect */
-            backdrop-filter: blur(20px); /* Increased blur for more pronounced glass */
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.4); /* Softer, more transparent border */
-            border-radius: 0 0 16px 16px; /* This border-radius will be overridden for input-group.glass */
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); /* Slightly more prominent shadow for depth */
-        }
+    <main>
+      <section class="weather-search glass">
+        <h1 class="title">Stadt suchen</h1>
 
-        /* Input-Group mit abgerundeten Ecken rundum */
-        .input-group.glass {
-            border-radius: 16px;
-            margin-bottom: 1rem;
-            overflow: hidden;
-            width: 366px;
-        }
+        <div class="input-group glass">
+          <input
+            type="text"
+            v-model="stadt"
+            @keyup.enter="wetterHolen"
+            placeholder="Stadt eingeben"
+            class="input"
+          />
+        </div>
 
-        /* Input füllt den runden Container */
-        .input {
-            width: 100%;
-            padding: 0.75rem 1rem;
-            border: none;
-            border-radius: 0;
-            font-size: 1rem;
-            outline: none;
-            background: rgba(255, 255, 255, 0.4); /* Transparent input background */
-            color: #333; /* Ensure text remains readable */
-        }
+        <button class="btn glass-btn" @click="wetterHolen">
+          Wetter anzeigen
+        </button>
 
-        /* Navbar exakt wie im Dashboard */
-        .navbar {
-            position: sticky;
-            top: 0;
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.75rem 1rem;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
-            border-radius: 0 0 16px 16px;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            z-index: 1000;
-        }
+        <div id="wetter" class="result glass">
+          <div v-if="wetter" class="weather-info">
+            <h2>{{ wetter.name }}, {{ wetter.sys.country }}</h2>
+            <img :src="iconUrl(wetter.weather[0].icon)" alt="Wetter Icon" class="icon">
+            <p class="desc"><strong>{{ wetter.weather[0].description }}</strong></p>
+            <p>Temperatur: {{ Math.round(wetter.main.temp) }}°C</p>
+            <p>Luftfeuchtigkeit: {{ wetter.main.humidity }}%</p>
+            <p>Wind: {{ wetter.wind.speed }} m/s</p>
+          </div>
+          <div v-if="error" class="error">{{ error }}</div>
+        </div>
+      </section>
 
-        .nav-left {
-            display: flex;
-            align-items: center;
-        }
+      <section class="forecast-box glass" v-if="daily.length">
+        <h2>5-Tage-Vorhersage</h2>
+        <div class="week-forecast">
+          <div
+            class="day-forecast"
+            v-for="(day, i) in daily"
+            :key="i"
+            @click="showDayDetails(day)"
+          >
+            <span class="day">{{ getWeekday(day.date) }}</span>
+            <img :src="iconUrl(day.icon)" alt="Icon" class="icon-small">
+            <span class="temp-range">
+              {{ Math.round(day.max) }}°C<br><small>/ {{ Math.round(day.min) }}°C</small>
+            </span>
+          </div>
+        </div>
+      </section>
 
-        .flag {
-            width: 32px;
-            margin-right: 0.85rem;
-        }
-
-        .name {
-            font-size: 1.35rem;
-            font-weight: 600;
-            color: #1a1a1a;
-        }
-
-        .tabs {
-            display: flex;
-        }
-
-        .tab {
-            margin-left: 0.85rem;
-            text-decoration: none;
-            font-size: 0.95rem;
-            color: #555;
-            position: relative;
-            padding: 0.5rem 1rem;
-            border-radius: 10px;
-            transition: background 0.3s ease, color 0.3s ease;
-        }
-
-        .tab:hover {
-            background: rgba(255, 255, 255, 0.4);
-            color: #1a1a1a;
-        }
-
-        /* Die "active" Klasse muss manuell gesetzt werden, da kein Vue Router */
-        .tab.active {
-            background: rgba(255, 255, 255, 0.5);
-            color: #1a1a1a;
-            font-weight: 600;
-        }
-
-        .tab.active::after {
-            content: '';
-            position: absolute;
-            bottom: 4px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60%;
-            height: 3px;
-            background: #007aff;
-            border-radius: 2px;
-            transition: width 0.3s ease;
-        }
-        /* Weather Search Section */
-        .weather-search {
-            width: 100%;
-            max-width: 400px;
-            margin: 2rem auto;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            overflow: hidden;
-        }
-        .title {
-            font-size: 2rem;
-            color: #333;
-            margin-bottom: 1rem;
-        }
-        .btn {
-            width: 100%;
-            padding: 0.75rem;
-            font-size: 1rem;
-            text-align: center;
-            cursor: pointer;
-            border: none;
-            border-radius: 8px;
-            background: rgba(0, 122, 255, 0.7); /* Transparent blue button */
-            color: white;
-            transition: background 0.3s ease;
-            margin-bottom: 1rem; /* Added margin for spacing */
-        }
-        .btn:hover {
-            background: rgba(0, 122, 255, 0.8); /* Slightly less transparent on hover */
-        }
-        .result {
-            width: 100%;
-            text-align: center;
-            padding: 1rem; /* Added padding for spacing inside the result box */
-        }
-        .weather-info {
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-        }
-        .icon {
-            width: 80px;
-            height: 80px;
-            margin: 1rem 0;
-        }
-        .desc {
-            font-size: 1.1rem;
-            margin-bottom: 0.5rem;
-        }
-        .error {
-            max-width: 500px;
-            margin: 1rem auto;
-            padding: 1rem 1.5rem;
-            color: #a94442;
-            background: rgba(255, 0, 0, 0.15);
-            border: 1px solid rgba(255, 0, 0, 0.3);
-            border-radius: 12px;
-            font-size: 1rem;
-            text-align: center;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-        }
-
-
-        /* Horizontale Forecast-Box */
-        .forecast-box {
-            width: 100%;
-            max-width: 500px;
-            margin: 1rem auto 0;
-            text-align: center;
-            padding: 1rem; /* Added padding for spacing inside the forecast box */
-        }
-        .forecast-box .week-forecast {
-            display: flex;
-            flex-direction: row;
-            flex-wrap: nowrap;
-            justify-content: space-between;
-            gap: 0.1rem;
-            margin-top: 1rem;
-            overflow-x: auto;
-        }
-        .forecast-box .day-forecast {
-            flex: 0 0 auto;
-            width: 80px;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            padding: 0.5rem;
-            background: rgba(255, 255, 255, 0.3); /* Transparent background for each day */
-            backdrop-filter: blur(10px); /* Add blur for consistent glass effect */
-            -webkit-backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.4); /* Light transparent border */
-            border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); /* Softer shadow */
-        }
-        .forecast-box .icon-small {
-            width: 40px;
-            height: 40px;
-            margin: 0.5rem 0;
-        }
-        .forecast-box .day {
-            font-weight: 600;
-        }
-        .forecast-box .temp-range {
-            font-size: 0.9rem;
-            line-height: 1.2;
-        }
-        /*  Hover Search */
-
-        .forecast-box:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
-            transition: transform 0.4s ease, box-shadow 0.4s ease;
-
-        }
-        .weather-search:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
-            transition: transform 0.4s ease, box-shadow 0.4s ease;
-
-        }
-        .day-forecast:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
-            transition: transform 0.4s ease, box-shadow 0.6s ease;
-
-        }
-
-
-        /* Responsive Anpassungen */
-        @media (max-width: 768px) {
-            main { /* Targets the main content area */
-                flex-direction: column;
-                padding: 0 0.5rem;
-            }
-            .weather-search, .forecast-box {
-                max-width: 95%; /* Adjust max-width for smaller screens */
-            }
-            .input-group.glass {
-                width: 100%; /* Make input group full width */
-            }
-        }
-        @media (max-width: 480px) {
-            .navbar {
-                padding: 0.4rem 0.6rem;
-            }
-            .flag {
-                width: 24px;
-            }
-            .name {
-                font-size: 1.1rem;
-            }
-            .tabs {
-                flex-direction: column; /* Tabs untereinander auf sehr kleinen Bildschirmen */
-                align-items: flex-end; /* Rechts ausrichten */
-            }
-            .tab {
-                font-size: 0.85rem;
-                padding: 0.2rem 0.5rem;
-                margin-left: 0; /* Kein linker Margin, wenn untereinander */
-                margin-top: 0.2rem; /* Kleiner Abstand zwischen den Tabs */
-            }
-            .title {
-                font-size: 1.4rem;
-            }
-        }
-        /* Applying the .glass styles to weather-search and forecast-box directly */
-        .weather-search,
-        .forecast-box {
-            border-radius: 16px;
-            overflow: hidden;
-            padding: 1rem;
-            margin-bottom: 1.5rem;
-            background: rgba(255, 255, 255, 0.25); /* Adjusted for specific elements */
-            backdrop-filter: blur(20px); /* Adjusted for specific elements */
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.4); /* Adjusted for specific elements */
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); /* Adjusted for specific elements */
-        }
-
-        .weather-search {
-            margin-top: 2rem;
-        }
-
-        .forecast-box {
-            margin-top: 1rem;
-        }
-    </style>
-</head>
-<body>
-    <div class="dashboard-wrapper">
-        <nav class="navbar glass">
-            <div class="nav-left">
-                <img src="assets/swissflag.png" alt="Swiss Flag" class="flag">
-                <span class="name">Swiss Weather</span>
+      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+        <div class="modal-content glass">
+          <button class="close-button" @click="closeModal">&times;</button>
+          <h2>Wetterdetails für {{ getFullDate(selectedDayDetails.date) }}</h2>
+          <div class="daily-hourly-forecast">
+            <div v-for="(hour, index) in selectedDayDetails.hourly" :key="index" class="hourly-item">
+              <p class="time">{{ new Date(hour.dt * 1000).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) }}</p>
+              <img :src="iconUrl(hour.weather[0].icon)" alt="Icon" class="icon-small">
+              <p class="temp">{{ Math.round(hour.main.temp) }}°C</p>
+              <p class="description">{{ hour.weather[0].description }}</p>
+              <p class="wind">Wind: {{ hour.wind.speed }} m/s</p>
             </div>
-            <div class="tabs">
-                <a href="/dashboard.html" class="tab">Dashboard</a>
-                <a href="/map.html" class="tab">Map</a>
-                <a href="/search.html" class="tab active">Search</a>
-            </div>
-        </nav>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</template>
 
-        <main>
-            <section class="weather-search glass">
-                <h1 class="title">Stadt suchen</h1>
+<script setup>
+import { ref, onMounted, watch } from 'vue' 
 
-                <div class="input-group glass">
-                    <input
-                        type="text"
-                        id="cityInput"
-                        placeholder="Stadt eingeben"
-                        class="input"
-                    />
-                </div>
+const stadt = ref('')
+const wetter = ref(null)
+const daily = ref([])
+const error = ref('')
+const showModal = ref(false)
+const selectedDayDetails = ref(null)
+const fullForecastData = ref([]) 
+const isDarkMode = ref(false) 
 
-                <button class="btn glass-btn" id="searchButton">
-                    Wetter anzeigen
-                </button>
+const apiKey = '8198635183eda125f7fe682e16be92d1'
 
-                <div id="wetter" class="result glass">
-                    <div id="weatherInfo" class="weather-info" style="display: none;">
-                        <h2 id="cityNameCountry"></h2>
-                        <img id="weatherIcon" alt="Wetter Icon" class="icon">
-                        <p class="desc"><strong id="weatherDescription"></strong></p>
-                        <p>Temperatur: <span id="temperature"></span>°C</p>
-                        <p>Luftfeuchtigkeit: <span id="humidity"></span>%</p>
-                        <p>Wind: <span id="windSpeed"></span> m/s</p>
-                    </div>
-                    <div id="errorMessage" class="error" style="display: none;"></div>
-                </div>
-            </section>
 
-            <section class="forecast-box glass" id="forecastBox" style="display: none;">
-                <h2>5-Tage-Vorhersage</h2>
-                <div class="week-forecast" id="weekForecast">
-                    </div>
-            </section>
-        </main>
-    </div>
+onMounted(() => {
+  const savedMode = localStorage.getItem('darkMode')
+  if (savedMode) {
+    isDarkMode.value = JSON.parse(savedMode)
+  }
 
-    <script>
-        // API-Schlüssel für OpenWeatherMap
-        const apiKey = '8198635183eda125f7fe682e16be92d1'; // Dein OpenWeatherMap API-Schlüssel
+  if (isDarkMode.value) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+})
 
-        // DOM-Elemente abrufen
-        const cityInput = document.getElementById('cityInput');
-        const searchButton = document.getElementById('searchButton');
-        const weatherInfoDiv = document.getElementById('weatherInfo');
-        const cityNameCountry = document.getElementById('cityNameCountry');
-        const weatherIcon = document.getElementById('weatherIcon');
-        const weatherDescription = document.getElementById('weatherDescription');
-        const temperature = document.getElementById('temperature');
-        const humidity = document.getElementById('humidity');
-        const windSpeed = document.getElementById('windSpeed');
-        const errorMessageDiv = document.getElementById('errorMessage');
-        const forecastBox = document.getElementById('forecastBox');
-        const weekForecastDiv = document.getElementById('weekForecast');
+watch(isDarkMode, (newVal) => {
+  localStorage.setItem('darkMode', JSON.stringify(newVal))
+  if (newVal) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+})
 
-        // Hilfsfunktion zum Erstellen der Icon-URL
-        const iconUrl = icon => `https://openweathermap.org/img/wn/${icon}@2x.png`;
+const iconUrl = icon => `https://openweathermap.org/img/wn/${icon}@2x.png`
+const getWeekday = dt => new Date(dt * 1000)
+  .toLocaleDateString('de-CH', { weekday: 'short' })
 
-        // Hilfsfunktion zum Abrufen des Wochentags
-        const getWeekday = dt => new Date(dt * 1000)
-            .toLocaleDateString('de-CH', { weekday: 'short' });
+const getFullDate = dt => new Date(dt * 1000)
+  .toLocaleDateString('de-CH', { weekday: 'long', day: '2-digit', month: '2-digit' })
 
-        // Funktion zum Abrufen und Anzeigen des Wetters
-        const wetterHolen = async () => {
-            // Fehlermeldung und bisherige Daten zurücksetzen
-            errorMessageDiv.style.display = 'none';
-            errorMessageDiv.textContent = '';
-            weatherInfoDiv.style.display = 'none';
-            forecastBox.style.display = 'none';
-            weekForecastDiv.innerHTML = ''; // Vorhersage leeren
+const wetterHolen = async () => {
+  error.value = ''
+  wetter.value = null
+  daily.value = []
+  fullForecastData.value = [] 
 
-            const stadt = cityInput.value.trim();
+  if (!stadt.value.trim()) {
+    error.value = 'Bitte eine Stadt eingeben'
+    return
+  }
 
-            if (!stadt) {
-                errorMessageDiv.textContent = 'Bitte eine Stadt eingeben';
-                errorMessageDiv.style.display = 'block';
-                return;
-            }
+  try {
+    const resNow = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather`
+      + `?q=${encodeURIComponent(stadt.value)}`
+      + `&units=metric&lang=de&appid=${apiKey}`
+    )
+    if (!resNow.ok) throw new Error('Stadt nicht gefunden')
+    const dataNow = await resNow.json()
+    wetter.value = dataNow
+    localStorage.setItem('lastWeather', JSON.stringify(dataNow))
 
-            try {
-                // Aktuelles Wetter abrufen
-                const resNow = await fetch(
-                    `https://api.openweathermap.org/data/2.5/weather`
-                    + `?q=${encodeURIComponent(stadt)}`
-                    + `&units=metric&lang=de&appid=${apiKey}`
-                );
-                if (!resNow.ok) {
-                    const errorData = await resNow.json();
-                    throw new Error(errorData.message || 'Stadt nicht gefunden');
-                }
-                const dataNow = await resNow.json();
+    const resFc = await fetch(
+      `https://api.openweathermap.org/data/2.5/forecast`
+      + `?q=${encodeURIComponent(stadt.value)}`
+      + `&units=metric&lang=de&appid=${apiKey}`
+    )
+    if (!resFc.ok) throw new Error('Forecast nicht verfügbar')
+    const dataFc = await resFc.json()
+    fullForecastData.value = dataFc.list; // Speichern der vollständigen 3-Stunden-Daten
 
-                // Aktuelles Wetter anzeigen
-                cityNameCountry.textContent = `${dataNow.name}, ${dataNow.sys.country}`;
-                weatherIcon.src = iconUrl(dataNow.weather[0].icon);
-                weatherDescription.textContent = dataNow.weather[0].description;
-                temperature.textContent = Math.round(dataNow.main.temp);
-                humidity.textContent = dataNow.main.humidity;
-                windSpeed.textContent = dataNow.wind.speed;
-                weatherInfoDiv.style.display = 'flex'; // Wieder auf 'flex' setzen, da es ein Flex-Container ist
+    const mapDays = {}
+    dataFc.list.forEach(entry => {
+      const dateKey = new Date(entry.dt * 1000).toDateString();
+      if (!mapDays[dateKey]) {
+        mapDays[dateKey] = {
+          date: entry.dt,
+          min: entry.main.temp_min,
+          max: entry.main.temp_max,
+          icon: entry.weather[0].icon,
+          hourly: [] 
+        }
+      } else {
+        mapDays[dateKey].min = Math.min(mapDays[dateKey].min, entry.main.temp_min)
+        mapDays[dateKey].max = Math.max(mapDays[dateKey].max, entry.main.temp_max)
+      }
 
-                // Letztes Wetter im localStorage speichern
-                localStorage.setItem('lastWeather', JSON.stringify(dataNow));
+      mapDays[dateKey].hourly.push(entry);
+    })
 
-                // 5-Tage-Vorhersage abrufen
-                const resFc = await fetch(
-                    `https://api.openweathermap.org/data/2.5/forecast`
-                    + `?q=${encodeURIComponent(stadt)}`
-                    + `&units=metric&lang=de&appid=${apiKey}`
-                );
-                if (!resFc.ok) {
-                     const errorData = await resFc.json();
-                     throw new Error(errorData.message || 'Forecast nicht verfügbar');
-                }
-                const dataFc = await resFc.json();
 
-                // Daten für die tägliche Vorhersage aufbereiten
-                const mapDays = {};
-                dataFc.list.forEach(entry => {
-                    // OpenWeatherMap's forecast provides data every 3 hours.
-                    // We want one entry per day, taking min/max temps for that day.
-                    const date = new Date(entry.dt * 1000);
-                    const dateStr = date.toISOString().split('T')[0]; // Format YYYY-MM-DD
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); 
 
-                    if (!mapDays[dateStr]) {
-                        mapDays[dateStr] = {
-                            date: entry.dt,
-                            min: entry.main.temp_min,
-                            max: entry.main.temp_max,
-                            icon: entry.weather[0].icon
-                        };
-                    } else {
-                        mapDays[dateStr].min = Math.min(mapDays[dateStr].min, entry.main.temp_min);
-                        mapDays[dateStr].max = Math.max(mapDays[dateStr].max, entry.main.temp_max);
-                        // Update icon to represent midday or common condition for the day, or just keep the first one
-                        // For simplicity, we'll just keep the first icon for the day here.
-                    }
-                });
+    const sortedDays = Object.values(mapDays).sort((a, b) => a.date - b.date);
+    daily.value = sortedDays.filter(day => {
+      const dayDate = new Date(day.date * 1000);
+      dayDate.setHours(0, 0, 0, 0);
+      return dayDate >= today;
+    }).slice(0, 5);
 
-                // Die ersten 5 Tage (ab dem nächsten Tag) auswählen
-                const dailyForecast = Object.values(mapDays).slice(0, 5); // slice(1,6) if you want to skip current day and get next 5
+    localStorage.setItem('lastDaily', JSON.stringify(daily.value))
 
-                // Vorhersage anzeigen
-                dailyForecast.forEach(day => {
-                    const dayDiv = document.createElement('div');
-                    dayDiv.classList.add('day-forecast');
-                    dayDiv.innerHTML = `
-                        <span class="day">${getWeekday(day.date)}</span>
-                        <img src="${iconUrl(day.icon)}" alt="Icon" class="icon-small">
-                        <span class="temp-range">
-                            ${Math.round(day.max)}°C<br><small>/ ${Math.round(day.min)}°C</small>
-                        </span>
-                    `;
-                    weekForecastDiv.appendChild(dayDiv);
-                });
-                forecastBox.style.display = 'block';
+  } catch (e) {
+    error.value = e.message
+  }
+}
 
-                // Letzte tägliche Vorhersage im localStorage speichern
-                localStorage.setItem('lastDaily', JSON.stringify(dailyForecast));
+const showDayDetails = (day) => {
+  selectedDayDetails.value = day;
+  showModal.value = true;
+}
 
-            } catch (e) {
-                errorMessageDiv.textContent = e.message;
-                errorMessageDiv.style.display = 'block';
-            }
-        };
+const closeModal = () => {
+  showModal.value = false;
+  selectedDayDetails.value = null;
+}
 
-        // Event Listener für den Button und Enter-Taste im Inputfeld
-        searchButton.addEventListener('click', wetterHolen);
-        cityInput.addEventListener('keyup', (event) => {
-            if (event.key === 'Enter') {
-                wetterHolen();
-            }
-        });
+onMounted(() => {
+  const savedWeather = localStorage.getItem('lastWeather')
+  if (savedWeather) {
+    wetter.value = JSON.parse(savedWeather)
+  }
 
-        // Beim Laden der Seite die zuletzt gespeicherten Daten anzeigen
-        document.addEventListener('DOMContentLoaded', () => {
-            const savedWeather = localStorage.getItem('lastWeather');
-            if (savedWeather) {
-                const dataNow = JSON.parse(savedWeather);
-                cityNameCountry.textContent = `${dataNow.name}, ${dataNow.sys.country}`;
-                weatherIcon.src = iconUrl(dataNow.weather[0].icon);
-                weatherDescription.textContent = dataNow.weather[0].description;
-                temperature.textContent = Math.round(dataNow.main.temp);
-                humidity.textContent = dataNow.main.humidity;
-                windSpeed.textContent = dataNow.wind.speed;
-                weatherInfoDiv.style.display = 'flex';
-                cityInput.value = dataNow.name; // Stadt im Inputfeld vorbesetzen
-            }
+  const savedDaily = localStorage.getItem('lastDaily')
+  if (savedDaily) {
+    daily.value = JSON.parse(savedDaily)
+  }
+})
+</script>
 
-            const savedDaily = localStorage.getItem('lastDaily');
-            if (savedDaily) {
-                const dailyForecast = JSON.parse(savedDaily);
-                dailyForecast.forEach(day => {
-                    const dayDiv = document.createElement('div');
-                    dayDiv.classList.add('day-forecast');
-                    dayDiv.innerHTML = `
-                        <span class="day">${getWeekday(day.date)}</span>
-                        <img src="${iconUrl(day.icon)}" alt="Icon" class="icon-small">
-                        <span class="temp-range">
-                            ${Math.round(day.max)}°C<br><small>/ ${Math.round(day.min)}°C</small>
-                        </span>
-                    `;
-                    weekForecastDiv.appendChild(dayDiv);
-                });
-                if (dailyForecast.length > 0) {
-                    forecastBox.style.display = 'block';
-                }
-            }
-        });
-    </script>
-</body>
-</html>
+<style scoped>
+
+* {
+  box-sizing: border-box;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background: linear-gradient(to bottom right, #f0f4f8, #d9e2ec); 
+  font-family: 'SF Pro Display', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
+  color: #333;
+}
+
+.dashboard-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.4s ease, color 0.4s ease;
+}
+
+
+.dashboard-wrapper.dark-mode {
+  background: linear-gradient(to bottom right, #333, #1a1a1a); 
+  color: #f0f0f0; 
+}
+
+/* Glass */
+.glass {
+  background: rgba(255, 255, 255, 0.25); 
+  backdrop-filter: blur(20px); 
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 0 0 16px 16px; 
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); 
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease, color 0.4s ease; 
+}
+
+/* Dark Mode styles for Glass elements */
+.dashboard-wrapper.dark-mode .glass {
+  background: rgba(70, 70, 70, 0.4); 
+  border: 1px solid rgba(90, 90, 90, 0.3);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  color: #f0f0f0;
+}
+
+
+/* Input-Group mit abgerundeten Ecken rundum */
+.input-group.glass {
+  border-radius: 16px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+  width: 366px;
+}
+
+/* Input füllt den runden Container */
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 0;
+  font-size: 1rem;
+  outline: none;
+  background: rgba(255, 255, 255, 0.4);
+  color: #333;
+  transition: background 0.4s ease, color 0.4s ease; 
+}
+/* Dark Mode styles for Input */
+.dashboard-wrapper.dark-mode .input {
+  background: rgba(90, 90, 90, 0.3);
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .input::placeholder { 
+  color: #bbb;
+}
+
+
+
+.navbar {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-radius: 0 0 16px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 1000;
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease; 
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+}
+
+.flag {
+  width: 32px;
+  margin-right: 0.85rem;
+}
+
+.name {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  transition: color 0.4s ease; 
+}
+
+.tabs {
+  display: flex;
+  align-items: center; 
+}
+
+.tab {
+  margin-left: 0.85rem;
+  text-decoration: none;
+  font-size: 0.95rem;
+  color: #555;
+  position: relative;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.tab:hover {
+  background: rgba(255, 255, 255, 0.4);
+  color: #1a1a1a;
+}
+
+.tab.router-link-exact-active {
+  background: rgba(255, 255, 255, 0.5);
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.tab.router-link-exact-active::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 3px;
+  background: #007aff;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.dashboard-wrapper.dark-mode .navbar {
+  background: rgba(40, 40, 40, 0.7); 
+  border: 1px solid rgba(60, 60, 60, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.dashboard-wrapper.dark-mode .navbar .name,
+.dashboard-wrapper.dark-mode .navbar .tab {
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .navbar .tab:hover {
+  background: rgba(60, 60, 60, 0.4);
+  color: #fff;
+}
+.dashboard-wrapper.dark-mode .navbar .tab.router-link-exact-active {
+  background: rgba(60, 60, 60, 0.5);
+  color: #fff;
+}
+
+.weather-search {
+  width: 100%;
+  max-width: 400px;
+  margin: 2rem auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease, border 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.title {
+  font-size: 2rem;
+  color: #333;
+  margin-bottom: 1rem;
+  transition: color 0.4s ease; 
+}
+
+.dashboard-wrapper.dark-mode .weather-search .title,
+.dashboard-wrapper.dark-mode .weather-search h2 {
+  color: #b0b0b0; 
+}
+.dashboard-wrapper.dark-mode .weather-search .desc,
+.dashboard-wrapper.dark-mode .weather-search p {
+  color: #f0f0f0; 
+}
+
+
+.btn {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  text-align: center;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 122, 255, 0.7); 
+  color: white;
+  transition: background 0.3s ease;
+}
+.btn:hover {
+  background: rgba(0, 122, 255, 0.8);
+}
+/* Dark Mode styles for Button */
+.dashboard-wrapper.dark-mode .btn {
+  background: rgba(0, 122, 255, 0.8); 
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+.dashboard-wrapper.dark-mode .btn:hover {
+  background: rgba(0, 122, 255, 0.9);
+}
+
+.result {
+  width: 100%;
+  text-align: center;
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.icon {
+  width: 80px;
+  height: 80px;
+  margin: 1rem 0;
+}
+.desc {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+.error {
+  max-width: 500px;
+  margin: 1rem auto;
+  padding: 1rem 1.5rem;
+  color: #a94442;
+  background: rgba(255, 0, 0, 0.15);
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  border-radius: 12px;
+  font-size: 1rem;
+  text-align: center;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.dashboard-wrapper.dark-mode .error {
+  background: rgba(255, 50, 50, 0.2); 
+  border: 1px solid rgba(255, 80, 80, 0.4);
+  color: #ffcccc; 
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+
+/* Horizontale Forecast-Box */
+.forecast-box {
+  width: 100%;
+  max-width: 500px;
+  margin: 1rem auto 0;
+  text-align: center;
+  transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease, border 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.forecast-box .week-forecast {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap; 
+  justify-content: flex-start; 
+  gap: 0.8rem; 
+  margin-top: 1rem;
+  overflow-x: auto; 
+  -webkit-overflow-scrolling: touch; 
+  padding-bottom: 10px; 
+}
+.forecast-box .day-forecast {
+  flex: 0 0 auto; 
+  width: 90px; 
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.3); 
+  backdrop-filter: blur(10px); 
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.4); 
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); 
+  cursor: pointer; 
+  transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease, border 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+
+.dashboard-wrapper.dark-mode .forecast-box h2 {
+  color: #b0b0b0;
+}
+.dashboard-wrapper.dark-mode .forecast-box .day-forecast {
+  background: rgba(90, 90, 90, 0.3);
+  border: 1px solid rgba(110, 110, 110, 0.4);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .forecast-box .day-forecast .temp-range small {
+  color: #ccc;
+}
+
+
+.forecast-box .icon-small {
+  width: 40px;
+  height: 40px;
+  margin: 0.5rem 0;
+}
+.forecast-box .day {
+  font-weight: 600;
+}
+.forecast-box .temp-range {
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+
+.forecast-box:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+    transition: transform 0.4s ease, box-shadow 0.4s ease;
+
+}
+.weather-search:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+
+}
+.day-forecast:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.4s ease, box-shadow 0.6s ease;
+
+}
+
+
+/* Responsive Anpassungen */
+@media (max-width: 768px) {
+  .content-wrapper {
+    flex-direction: column;
+    padding: 0 0.5rem;
+  }
+  .map-widget {
+    padding: 1.2rem;
+    min-height: 400px;
+  }
+  .actual-map {
+    height: 50vh;
+  }
+  .info-widget {
+    width: 100%;
+    padding: 1.2rem;
+  }
+
+
+  .weather-search,
+  .forecast-box {
+    max-width: 90%; 
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .navbar {
+    padding: 0.4rem 0.6rem;
+  }
+  .flag {
+    width: 24px;
+  }
+  .name {
+    font-size: 1.1rem;
+  }
+  .tab {
+    font-size: 0.85rem;
+    padding: 0.2rem 0.5rem;
+  }
+  .widget-title {
+    font-size: 1.4rem;
+  }
+  .actual-map {
+    height: 40vh;
+    border-radius: 10px;
+  }
+
+  .weather-search {
+    padding: 0.8rem; 
+    margin-top: 4.5rem; 
+  }
+
+  .input-group.glass {
+    width: 95%; 
+  }
+
+  .forecast-box {
+    padding: 0.8rem;
+    margin-top: 0.8rem;
+  }
+
+  .forecast-box .week-forecast {
+    justify-content: flex-start; 
+    gap: 0.5rem; 
+    padding-bottom: 0.5rem; 
+  }
+
+  .forecast-box .day-forecast {
+    width: 90px; 
+    padding: 0.6rem;
+  }
+
+  .modal-content {
+    width: 98%; 
+    padding: 1.5rem 1rem; 
+  }
+
+  .daily-hourly-forecast {
+    justify-content: space-around; 
+    gap: 0.5rem; 
+    max-height: 60vh; 
+    overflow-y: auto; 
+    padding-right: 5px; 
+  }
+
+  .hourly-item {
+    width: 90px;
+    padding: 0.6rem;
+  }
+
+  .hourly-item .time,
+  .hourly-item .temp {
+    font-size: 0.9em; 
+  }
+
+  .hourly-item .description,
+  .hourly-item .wind {
+    font-size: 0.7em; 
+  }
+}
+.weather-search,
+.forecast-box {
+  border-radius: 16px;
+  overflow: hidden;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  background: rgba(255, 255, 255, 0.25); 
+  backdrop-filter: blur(20px); 
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+.weather-search {
+  margin-top: 2rem;
+}
+
+.forecast-box {
+  margin-top: 1rem;
+}
+.forecast-box {
+  width: 100%;
+  max-width: 535px; 
+  margin: 1rem auto 0;
+  text-align: center;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1001;
+}
+
+.modal-content {
+  padding: 2rem;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  position: relative;
+  text-align: center;
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.dashboard-wrapper.dark-mode .modal-content {
+  background: rgba(60, 60, 60, 0.8);
+  border: 1px solid rgba(90, 90, 90, 0.4);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .modal-content h2 {
+  color: #b0b0b0;
+}
+.dashboard-wrapper.dark-mode .modal-content .close-button {
+  color: #ccc;
+}
+
+
+.close-button {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+  color: #555;
+  transition: color 0.4s ease; 
+}
+
+.daily-hourly-forecast {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  max-height: 70vh; 
+  overflow-y: auto; 
+  padding: 0.5rem; 
+}
+
+.hourly-item {
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease, border 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.dashboard-wrapper.dark-mode .hourly-item {
+  background: rgba(90, 90, 90, 0.3);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .hourly-item .description,
+.dashboard-wrapper.dark-mode .hourly-item .wind {
+  color: #ccc;
+}
+
+.hourly-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.4s ease, box-shadow 0.6s ease;
+
+}
+
+
+
+
+.hourly-item .time {
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+  font-size: 0.9em;
+
+}
+
+.hourly-item .icon-small {
+  width: 50px;
+  height: 50px;
+  margin: 0.2rem 0;
+}
+
+.hourly-item .temp {
+  font-size: 1.1em;
+  font-weight: bold;
+  margin-top: 0.2rem;
+}
+
+.hourly-item .description {
+  font-size: 0.8em;
+  color: #666;
+  text-align: center;
+  margin-top: 0.2rem;
+}
+.hourly-item .wind {
+  font-size: 0.7em;
+  color: #666;
+  text-align: center;
+  margin-top: 0.2rem;
+}
+
+/* Dark Mode Switch Styles*/
+.dark-mode-switch {
+  margin-left: 1rem;
+  display: flex;
+  align-items: center;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+  -webkit-transform: translateX(16px);
+  -ms-transform: translateX(16px);
+  transform: translateX(16px);
+}
+
+.slider.round {
+  border-radius: 24px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+</style>
