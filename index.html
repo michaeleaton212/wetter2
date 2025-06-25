@@ -1,407 +1,890 @@
-<!DOCTYPE html>
-<html lang="de">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Swiss Weather</title>
-    <style>
-        /* Global */
-        * { box-sizing: border-box; }
-        html, body {
-            margin: 0;
-            padding: 0;
-            overflow-x: hidden;
-            background: linear-gradient(to bottom right, #f0f4f8, #d9e2ec);
-            font-family: 'SF Pro Display', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
-            color: #333;
-        }
+<template>
+  <div class="dashboard-wrapper" :class="{ 'dark-mode': isDarkMode }">
+    <nav class="navbar glass">
+      <div class="nav-left">
+        <img src="@/assets/swissflag.png" alt="Swiss Flag" class="flag">
+        <span class="name">Swiss Weather</span>
+      </div>
+      <div class="tabs">
+        <router-link to="/dashboard" class="tab" active-class="router-link-exact-active">
+          Dashboard
+        </router-link>
+        <router-link to="/map" class="tab" active-class="router-link-exact-active">
+          Map
+        </router-link>
+        <router-link to="/search" class="tab" active-class="router-link-exact-active">
+          Search
+        </router-link>
 
-        .dashboard-wrapper {
-            min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-        }
+        <div class="dark-mode-switch">
+          <label class="switch">
+            <input type="checkbox" v-model="isDarkMode" />
+            <span class="slider round"></span>
+          </label>
+        </div>
+      </div>
+    </nav>
 
-        /* Glass Navbar */
-        .navbar {
-            position: sticky;
-            top: 0;
-            width: 100%;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 0.75rem 1rem;
-            background: rgba(255, 255, 255, 0.2);
-            backdrop-filter: blur(15px);
-            -webkit-backdrop-filter: blur(15px);
-            border-radius: 0 0 16px 16px;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
-            z-index: 1000;
-        }
+    <main>
+      <section class="weather-search glass">
+        <h1 class="title">Stadt suchen</h1>
 
-        .nav-left {
-            display: flex;
-            align-items: center;
-        }
+        <div class="input-group glass">
+          <input
+            type="text"
+            v-model="stadt"
+            @keyup.enter="wetterHolen"
+            placeholder="Stadt eingeben"
+            class="input"
+          />
+        </div>
 
-        .flag {
-            width: 32px;
-            margin-right: 0.85rem;
-        }
+        <button class="btn glass-btn" @click="wetterHolen">
+          Wetter anzeigen
+        </button>
 
-        .name {
-            font-size: 1.35rem;
-            font-weight: 600;
-            color: #1a1a1a;
-        }
+        <div id="wetter" class="result glass">
+          <div v-if="wetter" class="weather-info">
+            <h2>{{ wetter.name }}, {{ wetter.sys.country }}</h2>
+            <img :src="iconUrl(wetter.weather[0].icon)" alt="Wetter Icon" class="icon">
+            <p class="desc"><strong>{{ wetter.weather[0].description }}</strong></p>
+            <p>Temperatur: {{ Math.round(wetter.main.temp) }}°C</p>
+            <p>Luftfeuchtigkeit: {{ wetter.main.humidity }}%</p>
+            <p>Wind: {{ wetter.wind.speed }} m/s</p>
+          </div>
+          <div v-if="error" class="error">{{ error }}</div>
+        </div>
+      </section>
 
-        .tabs {
-            display: flex;
-        }
+      <section class="forecast-box glass" v-if="daily.length">
+        <h2>5-Tage-Vorhersage</h2>
+        <div class="week-forecast">
+          <div
+            class="day-forecast"
+            v-for="(day, i) in daily"
+            :key="i"
+            @click="showDayDetails(day)"
+          >
+            <span class="day">{{ getWeekday(day.date) }}</span>
+            <img :src="iconUrl(day.icon)" alt="Icon" class="icon-small">
+            <span class="temp-range">
+              {{ Math.round(day.max) }}°C<br><small>/ {{ Math.round(day.min) }}°C</small>
+            </span>
+          </div>
+        </div>
+      </section>
 
-        .tab {
-            margin-left: 0.85rem;
-            text-decoration: none;
-            font-size: 0.95rem;
-            color: #555;
-            position: relative;
-            padding: 0.5rem 1rem;
-            border-radius: 10px;
-            transition: background 0.3s ease, color 0.3s ease;
-        }
-
-        .tab:hover {
-            background: rgba(255, 255, 255, 0.4);
-            color: #1a1a1a;
-        }
-
-        /* Für die aktive Navigationsleiste wird hier eine statische Klasse verwendet.
-           In Vue wurde dies dynamisch über `router-link-exact-active` gehandhabt.
-           Du müsstest dies manuell einstellen oder mit JavaScript steuern. */
-        .tab.active {
-            background: rgba(255, 255, 255, 0.5);
-            color: #1a1a1a;
-            font-weight: 600;
-        }
-
-        .tab.active::after {
-            content: '';
-            position: absolute;
-            bottom: 4px;
-            left: 50%;
-            transform: translateX(-50%);
-            width: 60%;
-            height: 3px;
-            background: #007aff;
-            border-radius: 2px;
-            transition: width 0.3s ease;
-        }
-
-        /* Widgets Grid */
-        main {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-            gap: 1rem;
-            padding: 1rem;
-            justify-content: center;
-        }
-
-        .widget {
-            background: rgba(255, 255, 255, 0.25); /* Glasiger Effekt: Weiße Farbe mit 25% Deckkraft */
-            backdrop-filter: blur(20px); /* Stärkere Unschärfe */
-            -webkit-backdrop-filter: blur(20px);
-            border-radius: 16px;
-            padding: 1.5rem;
-            box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1);
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: space-around;
-            border: 1px solid rgba(255, 255, 255, 0.3); /* Leichter, transparenter Rand */
-        }
-
-        .widget:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
-        }
-
-        .widget h2 {
-            font-size: 1.1rem;
-            margin-bottom: 1rem;
-            color: #444;
-            text-align: center;
-        }
-
-        /* Aktuelles Wetter Widget */
-        .current-weather-widget {
-            /* Für einen glasigen Effekt bei Farbverläufen kannst du die Transparenz in den Farben selbst anpassen */
-            background: linear-gradient(135deg, rgba(106, 183, 255, 0.6), rgba(0, 122, 255, 0.6));
-            color: white;
-            grid-column: span 2;
-            backdrop-filter: blur(20px); /* Auch hier Unschärfe anwenden */
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.4);
-        }
-
-        .current-weather-widget .temp {
-            font-size: 4rem;
-            font-weight: bold;
-            margin-bottom: 0.3rem;
-        }
-
-        .current-weather-widget .desc {
-            font-size: 1.2rem;
-            color: rgba(255, 255, 255, 0.9);
-        }
-
-        .current-weather-widget .location {
-            font-size: 1rem;
-            color: rgba(255, 255, 255, 0.8);
-        }
-
-        /* Wochenübersicht Widget */
-        .weekly-forecast-widget {
-            grid-column: span 2;
-            background: rgba(255, 255, 255, 0.25); /* Auch hier glasig machen */
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-        }
-
-        .week-forecast {
-            width: 100%; /* Sicherstellen, dass der Container die volle Breite einnimmt */
-        }
-
-        .day-forecast {
-            width: 100%;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 0.3rem 0;
-            border-bottom: 1px solid rgba(0, 0, 0, 0.1);
-        }
-
-        .day-forecast:last-child {
-            border-bottom: none;
-        }
-
-        .day-forecast .icon {
-            width: 50px; /* Größe der Icons anpassen */
-            height: auto;
-        }
-
-        .day-forecast .temp-range {
-            font-weight: bold;
-            min-width: 80px; /* Für bessere Ausrichtung */
-            text-align: right;
-        }
-
-        /* Sonne-, Wind-, Luftfeuchtigkeits-Widgets */
-        .sun-times-widget,
-        .wind-widget,
-        .Luftfeuchtigkeits-widget {
-            min-height: 180px;
-            padding: 1.5rem;
-            text-align: center;
-            background: linear-gradient(135deg, rgba(255, 255, 255, 0.25), rgba(240, 244, 255, 0.25));
-            border-radius: 20px;
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.08);
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            justify-content: center; /* Jetzt in der Mitte */
-            gap: 1rem;
-            transition: transform 0.3s ease, box-shadow 0.3s ease;
-            border: 1px solid rgba(255, 255, 255, 0.4);
-        }
-        .sun-times-widget:hover,
-        .wind-widget:hover,
-        .Luftfeuchtigkeits-widget:hover {
-            transform: translateY(-6px);
-            box-shadow: 0 15px 30px rgba(0, 0, 0, 0.12);
-        }
-
-        .sun-times-widget h2,
-        .wind-widget h2,
-        .Luftfeuchtigkeits-widget h2 {
-            font-size: 1.2rem;
-            color: #007aff;
-            font-weight: 700;
-            margin: 0;
-        }
-
-        .sun-time,
-        .detail-item {
-            font-size: 1rem;
-            color: #333;
-            background: rgba(255, 255, 255, 0.3); /* Mehr Transparenz */
-            padding: 0.6rem 1rem;
-            border-radius: 12px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            margin-bottom: 0.5rem;
-            width: 100%;
-            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.03); /* Leichterer Schatten */
-            border: 1px solid rgba(255, 255, 255, 0.4); /* Transparenter Rand */
-        }
-
-        /* Responsivität für kleinere Bildschirme */
-        @media (max-width: 768px) {
-            main {
-                grid-template-columns: 1fr; /* Eine Spalte auf kleinen Bildschirmen */
-            }
-            .current-weather-widget,
-            .weekly-forecast-widget {
-                grid-column: span 1; /* Nehmen Sie nur eine Spalte ein */
-            }
-        }
-        @media (max-width: 480px) {
-            .navbar {
-                padding: 0.4rem 0.6rem;
-            }
-            .flag {
-                width: 24px;
-            }
-            .name {
-                font-size: 1.1rem;
-            }
-            .tabs {
-                flex-direction: column; /* Tabs untereinander auf sehr kleinen Bildschirmen */
-                align-items: flex-end; /* Rechts ausrichten */
-            }
-            .tab {
-                font-size: 0.85rem;
-                padding: 0.2rem 0.5rem;
-                margin-left: 0; /* Kein linker Margin, wenn untereinander */
-                margin-top: 0.2rem; /* Kleiner Abstand zwischen den Tabs */
-            }
-            .widget-title { /* Diese Klasse war nicht im ursprünglichen Code, falls sie verwendet wird */
-                font-size: 1.4rem;
-            }
-        }
-        .error-wrapper {
-            position: fixed;
-            top: 50%;
-            left: 50%;
-            transform: translate(-50%, -50%);
-            z-index: 9999;
-        }
-
-        .error {
-            max-width: 600px;
-            padding: 1.5rem 2rem;
-            color: #a94442;
-            background: rgba(255, 0, 0, 0.15);
-            border: 1px solid rgba(255, 0, 0, 0.3);
-            border-radius: 12px;
-            font-size: 1.1rem;
-            text-align: center;
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.15);
-        }
-    </style>
-</head>
-<body>
-    <div class="dashboard-wrapper">
-        <nav class="navbar glass">
-            <div class="nav-left">
-                <img src="assets/swissflag.png" alt="Swiss Flag" class="flag">
-                <span class="name">Swiss Weather</span>
+      <div v-if="showModal" class="modal-overlay" @click.self="closeModal">
+        <div class="modal-content glass">
+          <button class="close-button" @click="closeModal">&times;</button>
+          <h2>Wetterdetails für {{ getFullDate(selectedDayDetails.date) }}</h2>
+          <div class="daily-hourly-forecast">
+            <div v-for="(hour, index) in selectedDayDetails.hourly" :key="index" class="hourly-item">
+              <p class="time">{{ new Date(hour.dt * 1000).toLocaleTimeString('de-CH', { hour: '2-digit', minute: '2-digit' }) }}</p>
+              <img :src="iconUrl(hour.weather[0].icon)" alt="Icon" class="icon-small">
+              <p class="temp">{{ Math.round(hour.main.temp) }}°C</p>
+              <p class="description">{{ hour.weather[0].description }}</p>
+              <p class="wind">Wind: {{ hour.wind.speed }} m/s</p>
             </div>
-            <div class="tabs">
-                <a href="/dashboard.html" class="tab active">
-                    Dashboard
-                </a>
-                <a href="/map.html" class="tab">
-                    Map
-                </a>
-                <a href="/search.html" class="tab">
-                    Search
-                </a>
-            </div>
-        </nav>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+</template>
 
-        <main>
-            <div class="widget current-weather-widget glass">
-                <h2>Aktuelles Wetter</h2>
-                <div class="temp">20°C</div>
-                <div class="desc">Leichter Regen</div>
-                <div class="location">Zürich, CH</div>
-            </div>
+<script setup>
+import { ref, onMounted, watch } from 'vue' 
 
-            <div class="widget weekly-forecast-widget glass">
-                <h2>Wochenübersicht</h2>
-                <div class="week-forecast">
-                    <div class="day-forecast">
-                        <span class="day">Mo</span>
-                        <img src="https://openweathermap.org/img/wn/10d@2x.png" alt="Icon" class="icon">
-                        <span class="temp-range">
-                            22°C / 15°C
-                        </span>
-                    </div>
-                    <div class="day-forecast">
-                        <span class="day">Di</span>
-                        <img src="https://openweathermap.org/img/wn/01d@2x.png" alt="Icon" class="icon">
-                        <span class="temp-range">
-                            25°C / 17°C
-                        </span>
-                    </div>
-                    <div class="day-forecast">
-                        <span class="day">Mi</span>
-                        <img src="https://openweathermap.org/img/wn/04d@2x.png" alt="Icon" class="icon">
-                        <span class="temp-range">
-                            20°C / 14°C
-                        </span>
-                    </div>
-                    <div class="day-forecast">
-                        <span class="day">Do</span>
-                        <img src="https://openweathermap.org/img/wn/09d@2x.png" alt="Icon" class="icon">
-                        <span class="temp-range">
-                            18°C / 12°C
-                        </span>
-                    </div>
-                    <div class="day-forecast">
-                        <span class="day">Fr</span>
-                        <img src="https://openweathermap.org/img/wn/03d@2x.png" alt="Icon" class="icon">
-                        <span class="temp-range">
-                            23°C / 16°C
-                        </span>
-                    </div>
-                </div>
-            </div>
+const stadt = ref('')
+const wetter = ref(null)
+const daily = ref([])
+const error = ref('')
+const showModal = ref(false)
+const selectedDayDetails = ref(null)
+const fullForecastData = ref([]) 
+const isDarkMode = ref(false) 
 
-            <div class="widget sun-times-widget glass">
-                <h2>Sonne</h2>
-                <div class="sun-time">05:30</div>
-                <div class="sun-time">21:15</div>
-            </div>
+const apiKey = '8198635183eda125f7fe682e16be92d1'
 
-            <div class="widget wind-widget glass">
-                <h2>Wind</h2>
-                <div class="detail-item">
-                    <span>Wind:</span>
-                    <span>
-                        15 km/h NW
-                    </span>
-                </div>
-            </div>
 
-            <div class="widget Luftfeuchtigkeits-widget glass">
-                <h2>Luftfeuchtigkeit</h2>
-                <div class="detail-item">
-                    <span>Luftfeuchtigkeit:</span>
-                    <span>75 %</span>
-                </div>
-            </div>
+onMounted(() => {
+  const savedMode = localStorage.getItem('darkMode')
+  if (savedMode) {
+    isDarkMode.value = JSON.parse(savedMode)
+  }
 
-            </main>
-    </div>
-</body>
-</html>
+  if (isDarkMode.value) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+})
+
+watch(isDarkMode, (newVal) => {
+  localStorage.setItem('darkMode', JSON.stringify(newVal))
+  if (newVal) {
+    document.documentElement.setAttribute('data-theme', 'dark');
+  } else {
+    document.documentElement.removeAttribute('data-theme');
+  }
+})
+
+const iconUrl = icon => `https://openweathermap.org/img/wn/${icon}@2x.png`
+const getWeekday = dt => new Date(dt * 1000)
+  .toLocaleDateString('de-CH', { weekday: 'short' })
+
+const getFullDate = dt => new Date(dt * 1000)
+  .toLocaleDateString('de-CH', { weekday: 'long', day: '2-digit', month: '2-digit' })
+
+const wetterHolen = async () => {
+  error.value = ''
+  wetter.value = null
+  daily.value = []
+  fullForecastData.value = [] 
+
+  if (!stadt.value.trim()) {
+    error.value = 'Bitte eine Stadt eingeben'
+    return
+  }
+
+  try {
+    const resNow = await fetch(
+      `https://api.openweathermap.org/data/2.5/weather`
+      + `?q=${encodeURIComponent(stadt.value)}`
+      + `&units=metric&lang=de&appid=${apiKey}`
+    )
+    if (!resNow.ok) throw new Error('Stadt nicht gefunden')
+    const dataNow = await resNow.json()
+    wetter.value = dataNow
+    localStorage.setItem('lastWeather', JSON.stringify(dataNow))
+
+    const resFc = await fetch(
+      `https://api.openweathermap.org/data/2.5/forecast`
+      + `?q=${encodeURIComponent(stadt.value)}`
+      + `&units=metric&lang=de&appid=${apiKey}`
+    )
+    if (!resFc.ok) throw new Error('Forecast nicht verfügbar')
+    const dataFc = await resFc.json()
+    fullForecastData.value = dataFc.list; // Speichern der vollständigen 3-Stunden-Daten
+
+    const mapDays = {}
+    dataFc.list.forEach(entry => {
+      const dateKey = new Date(entry.dt * 1000).toDateString();
+      if (!mapDays[dateKey]) {
+        mapDays[dateKey] = {
+          date: entry.dt,
+          min: entry.main.temp_min,
+          max: entry.main.temp_max,
+          icon: entry.weather[0].icon,
+          hourly: [] 
+        }
+      } else {
+        mapDays[dateKey].min = Math.min(mapDays[dateKey].min, entry.main.temp_min)
+        mapDays[dateKey].max = Math.max(mapDays[dateKey].max, entry.main.temp_max)
+      }
+
+      mapDays[dateKey].hourly.push(entry);
+    })
+
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0); 
+
+    const sortedDays = Object.values(mapDays).sort((a, b) => a.date - b.date);
+    daily.value = sortedDays.filter(day => {
+      const dayDate = new Date(day.date * 1000);
+      dayDate.setHours(0, 0, 0, 0);
+      return dayDate >= today;
+    }).slice(0, 5);
+
+    localStorage.setItem('lastDaily', JSON.stringify(daily.value))
+
+  } catch (e) {
+    error.value = e.message
+  }
+}
+
+const showDayDetails = (day) => {
+  selectedDayDetails.value = day;
+  showModal.value = true;
+}
+
+const closeModal = () => {
+  showModal.value = false;
+  selectedDayDetails.value = null;
+}
+
+onMounted(() => {
+  const savedWeather = localStorage.getItem('lastWeather')
+  if (savedWeather) {
+    wetter.value = JSON.parse(savedWeather)
+  }
+
+  const savedDaily = localStorage.getItem('lastDaily')
+  if (savedDaily) {
+    daily.value = JSON.parse(savedDaily)
+  }
+})
+</script>
+
+<style scoped>
+
+* {
+  box-sizing: border-box;
+}
+html, body {
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  background: linear-gradient(to bottom right, #f0f4f8, #d9e2ec); 
+  font-family: 'SF Pro Display', 'Helvetica Neue', 'Helvetica', 'Arial', sans-serif;
+  color: #333;
+}
+
+.dashboard-wrapper {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  transition: background 0.4s ease, color 0.4s ease;
+}
+
+
+.dashboard-wrapper.dark-mode {
+  background: linear-gradient(to bottom right, #333, #1a1a1a); 
+  color: #f0f0f0; 
+}
+
+/* Glass */
+.glass {
+  background: rgba(255, 255, 255, 0.25); 
+  backdrop-filter: blur(20px); 
+  -webkit-backdrop-filter: blur(30px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-radius: 0 0 16px 16px; 
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08); 
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease, color 0.4s ease; 
+}
+
+/* Dark Mode styles for Glass elements */
+.dashboard-wrapper.dark-mode .glass {
+  background: rgba(70, 70, 70, 0.4); 
+  border: 1px solid rgba(90, 90, 90, 0.3);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  color: #f0f0f0;
+}
+
+
+/* Input-Group mit abgerundeten Ecken rundum */
+.input-group.glass {
+  border-radius: 16px;
+  margin-bottom: 1rem;
+  overflow: hidden;
+  width: 366px;
+}
+
+/* Input füllt den runden Container */
+.input {
+  width: 100%;
+  padding: 0.75rem 1rem;
+  border: none;
+  border-radius: 0;
+  font-size: 1rem;
+  outline: none;
+  background: rgba(255, 255, 255, 0.4);
+  color: #333;
+  transition: background 0.4s ease, color 0.4s ease; 
+}
+/* Dark Mode styles for Input */
+.dashboard-wrapper.dark-mode .input {
+  background: rgba(90, 90, 90, 0.3);
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .input::placeholder { 
+  color: #bbb;
+}
+
+
+
+.navbar {
+  position: sticky;
+  top: 0;
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  background: rgba(255, 255, 255, 0.2);
+  backdrop-filter: blur(15px);
+  -webkit-backdrop-filter: blur(15px);
+  border-radius: 0 0 16px 16px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  z-index: 1000;
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease; 
+}
+
+.nav-left {
+  display: flex;
+  align-items: center;
+}
+
+.flag {
+  width: 32px;
+  margin-right: 0.85rem;
+}
+
+.name {
+  font-size: 1.35rem;
+  font-weight: 600;
+  color: #1a1a1a;
+  transition: color 0.4s ease; 
+}
+
+.tabs {
+  display: flex;
+  align-items: center; 
+}
+
+.tab {
+  margin-left: 0.85rem;
+  text-decoration: none;
+  font-size: 0.95rem;
+  color: #555;
+  position: relative;
+  padding: 0.5rem 1rem;
+  border-radius: 10px;
+  transition: background 0.3s ease, color 0.3s ease;
+}
+
+.tab:hover {
+  background: rgba(255, 255, 255, 0.4);
+  color: #1a1a1a;
+}
+
+.tab.router-link-exact-active {
+  background: rgba(255, 255, 255, 0.5);
+  color: #1a1a1a;
+  font-weight: 600;
+}
+
+.tab.router-link-exact-active::after {
+  content: '';
+  position: absolute;
+  bottom: 4px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60%;
+  height: 3px;
+  background: #007aff;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.dashboard-wrapper.dark-mode .navbar {
+  background: rgba(40, 40, 40, 0.7); 
+  border: 1px solid rgba(60, 60, 60, 0.4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+.dashboard-wrapper.dark-mode .navbar .name,
+.dashboard-wrapper.dark-mode .navbar .tab {
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .navbar .tab:hover {
+  background: rgba(60, 60, 60, 0.4);
+  color: #fff;
+}
+.dashboard-wrapper.dark-mode .navbar .tab.router-link-exact-active {
+  background: rgba(60, 60, 60, 0.5);
+  color: #fff;
+}
+
+.weather-search {
+  width: 100%;
+  max-width: 400px;
+  margin: 2rem auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+  transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease, border 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.title {
+  font-size: 2rem;
+  color: #333;
+  margin-bottom: 1rem;
+  transition: color 0.4s ease; 
+}
+
+.dashboard-wrapper.dark-mode .weather-search .title,
+.dashboard-wrapper.dark-mode .weather-search h2 {
+  color: #b0b0b0; 
+}
+.dashboard-wrapper.dark-mode .weather-search .desc,
+.dashboard-wrapper.dark-mode .weather-search p {
+  color: #f0f0f0; 
+}
+
+
+.btn {
+  width: 100%;
+  padding: 0.75rem;
+  font-size: 1rem;
+  text-align: center;
+  cursor: pointer;
+  border: none;
+  border-radius: 8px;
+  background: rgba(0, 122, 255, 0.7); 
+  color: white;
+  transition: background 0.3s ease;
+}
+.btn:hover {
+  background: rgba(0, 122, 255, 0.8);
+}
+/* Dark Mode styles for Button */
+.dashboard-wrapper.dark-mode .btn {
+  background: rgba(0, 122, 255, 0.8); 
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+.dashboard-wrapper.dark-mode .btn:hover {
+  background: rgba(0, 122, 255, 0.9);
+}
+
+.result {
+  width: 100%;
+  text-align: center;
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.icon {
+  width: 80px;
+  height: 80px;
+  margin: 1rem 0;
+}
+.desc {
+  font-size: 1.1rem;
+  margin-bottom: 0.5rem;
+}
+.error {
+  max-width: 500px;
+  margin: 1rem auto;
+  padding: 1rem 1.5rem;
+  color: #a94442;
+  background: rgba(255, 0, 0, 0.15);
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  border-radius: 12px;
+  font-size: 1rem;
+  text-align: center;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.dashboard-wrapper.dark-mode .error {
+  background: rgba(255, 50, 50, 0.2); 
+  border: 1px solid rgba(255, 80, 80, 0.4);
+  color: #ffcccc; 
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.2);
+}
+
+
+/* Horizontale Forecast-Box */
+.forecast-box {
+  width: 100%;
+  max-width: 500px;
+  margin: 1rem auto 0;
+  text-align: center;
+  transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease, border 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.forecast-box .week-forecast {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap; 
+  justify-content: flex-start; 
+  gap: 0.8rem; 
+  margin-top: 1rem;
+  overflow-x: auto; 
+  -webkit-overflow-scrolling: touch; 
+  padding-bottom: 10px; 
+}
+.forecast-box .day-forecast {
+  flex: 0 0 auto; 
+  width: 90px; 
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.3); 
+  backdrop-filter: blur(10px); 
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.4); 
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05); 
+  cursor: pointer; 
+  transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease, border 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+
+.dashboard-wrapper.dark-mode .forecast-box h2 {
+  color: #b0b0b0;
+}
+.dashboard-wrapper.dark-mode .forecast-box .day-forecast {
+  background: rgba(90, 90, 90, 0.3);
+  border: 1px solid rgba(110, 110, 110, 0.4);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .forecast-box .day-forecast .temp-range small {
+  color: #ccc;
+}
+
+
+.forecast-box .icon-small {
+  width: 40px;
+  height: 40px;
+  margin: 0.5rem 0;
+}
+.forecast-box .day {
+  font-weight: 600;
+}
+.forecast-box .temp-range {
+  font-size: 0.9rem;
+  line-height: 1.2;
+}
+
+
+.forecast-box:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+    transition: transform 0.4s ease, box-shadow 0.4s ease;
+
+}
+.weather-search:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.4s ease, box-shadow 0.4s ease;
+
+}
+.day-forecast:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.4s ease, box-shadow 0.6s ease;
+
+}
+
+
+/* Responsive Anpassungen */
+@media (max-width: 768px) {
+  .content-wrapper {
+    flex-direction: column;
+    padding: 0 0.5rem;
+  }
+  .map-widget {
+    padding: 1.2rem;
+    min-height: 400px;
+  }
+  .actual-map {
+    height: 50vh;
+  }
+  .info-widget {
+    width: 100%;
+    padding: 1.2rem;
+  }
+
+
+  .weather-search,
+  .forecast-box {
+    max-width: 90%; 
+    margin-left: auto;
+    margin-right: auto;
+  }
+}
+
+@media (max-width: 480px) {
+  .navbar {
+    padding: 0.4rem 0.6rem;
+  }
+  .flag {
+    width: 24px;
+  }
+  .name {
+    font-size: 1.1rem;
+  }
+  .tab {
+    font-size: 0.85rem;
+    padding: 0.2rem 0.5rem;
+  }
+  .widget-title {
+    font-size: 1.4rem;
+  }
+  .actual-map {
+    height: 40vh;
+    border-radius: 10px;
+  }
+
+  .weather-search {
+    padding: 0.8rem; 
+    margin-top: 4.5rem; 
+  }
+
+  .input-group.glass {
+    width: 95%; 
+  }
+
+  .forecast-box {
+    padding: 0.8rem;
+    margin-top: 0.8rem;
+  }
+
+  .forecast-box .week-forecast {
+    justify-content: flex-start; 
+    gap: 0.5rem; 
+    padding-bottom: 0.5rem; 
+  }
+
+  .forecast-box .day-forecast {
+    width: 90px; 
+    padding: 0.6rem;
+  }
+
+  .modal-content {
+    width: 98%; 
+    padding: 1.5rem 1rem; 
+  }
+
+  .daily-hourly-forecast {
+    justify-content: space-around; 
+    gap: 0.5rem; 
+    max-height: 60vh; 
+    overflow-y: auto; 
+    padding-right: 5px; 
+  }
+
+  .hourly-item {
+    width: 90px;
+    padding: 0.6rem;
+  }
+
+  .hourly-item .time,
+  .hourly-item .temp {
+    font-size: 0.9em; 
+  }
+
+  .hourly-item .description,
+  .hourly-item .wind {
+    font-size: 0.7em; 
+  }
+}
+.weather-search,
+.forecast-box {
+  border-radius: 16px;
+  overflow: hidden;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+  background: rgba(255, 255, 255, 0.25); 
+  backdrop-filter: blur(20px); 
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+.weather-search {
+  margin-top: 2rem;
+}
+
+.forecast-box {
+  margin-top: 1rem;
+}
+.forecast-box {
+  width: 100%;
+  max-width: 535px; 
+  margin: 1rem auto 0;
+  text-align: center;
+}
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 1001;
+}
+
+.modal-content {
+  padding: 2rem;
+  border-radius: 16px;
+  width: 90%;
+  max-width: 600px;
+  position: relative;
+  text-align: center;
+  transition: background 0.4s ease, border 0.4s ease, box-shadow 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.dashboard-wrapper.dark-mode .modal-content {
+  background: rgba(60, 60, 60, 0.8);
+  border: 1px solid rgba(90, 90, 90, 0.4);
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .modal-content h2 {
+  color: #b0b0b0;
+}
+.dashboard-wrapper.dark-mode .modal-content .close-button {
+  color: #ccc;
+}
+
+
+.close-button {
+  position: absolute;
+  top: 10px;
+  right: 15px;
+  background: none;
+  border: none;
+  font-size: 2rem;
+  cursor: pointer;
+  color: #555;
+  transition: color 0.4s ease; 
+}
+
+.daily-hourly-forecast {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 1rem;
+  margin-top: 1.5rem;
+  max-height: 70vh; 
+  overflow-y: auto; 
+  padding: 0.5rem; 
+}
+
+.hourly-item {
+  background: rgba(255, 255, 255, 0.4);
+  border-radius: 10px;
+  padding: 0.8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100px;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.05);
+  transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease, border 0.4s ease, color 0.4s ease; /* Smooth transitions */
+}
+.dashboard-wrapper.dark-mode .hourly-item {
+  background: rgba(90, 90, 90, 0.3);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.1);
+  color: #f0f0f0;
+}
+.dashboard-wrapper.dark-mode .hourly-item .description,
+.dashboard-wrapper.dark-mode .hourly-item .wind {
+  color: #ccc;
+}
+
+.hourly-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.15);
+  transition: transform 0.4s ease, box-shadow 0.6s ease;
+
+}
+
+
+
+
+.hourly-item .time {
+  font-weight: 600;
+  margin-bottom: 0.2rem;
+  font-size: 0.9em;
+
+}
+
+.hourly-item .icon-small {
+  width: 50px;
+  height: 50px;
+  margin: 0.2rem 0;
+}
+
+.hourly-item .temp {
+  font-size: 1.1em;
+  font-weight: bold;
+  margin-top: 0.2rem;
+}
+
+.hourly-item .description {
+  font-size: 0.8em;
+  color: #666;
+  text-align: center;
+  margin-top: 0.2rem;
+}
+.hourly-item .wind {
+  font-size: 0.7em;
+  color: #666;
+  text-align: center;
+  margin-top: 0.2rem;
+}
+
+/* Dark Mode Switch Styles*/
+.dark-mode-switch {
+  margin-left: 1rem;
+  display: flex;
+  align-items: center;
+}
+
+.switch {
+  position: relative;
+  display: inline-block;
+  width: 40px;
+  height: 24px;
+}
+
+.switch input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.slider {
+  position: absolute;
+  cursor: pointer;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: #ccc;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+.slider:before {
+  position: absolute;
+  content: "";
+  height: 16px;
+  width: 16px;
+  left: 4px;
+  bottom: 4px;
+  background-color: white;
+  -webkit-transition: .4s;
+  transition: .4s;
+}
+
+input:checked + .slider {
+  background-color: #2196F3;
+}
+
+input:focus + .slider {
+  box-shadow: 0 0 1px #2196F3;
+}
+
+input:checked + .slider:before {
+  -webkit-transform: translateX(16px);
+  -ms-transform: translateX(16px);
+  transform: translateX(16px);
+}
+
+.slider.round {
+  border-radius: 24px;
+}
+
+.slider.round:before {
+  border-radius: 50%;
+}
+</style>
